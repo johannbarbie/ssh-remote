@@ -10,5 +10,5 @@ node index.js
 ## client:
 
 ```
-ssh -i etc/foo/foo foo@localhost -p 57823 ls
+ssh -i foo foo@localhost -p 1337 -R 3002:localhost:3000
 ```

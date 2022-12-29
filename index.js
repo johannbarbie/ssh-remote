@@ -1,6 +1,7 @@
 const { timingSafeEqual } = require('crypto');
 const { readFileSync } = require('fs');
 const { inspect } = require('util');
+const net = require('net');
 
 const { utils: { parseKey }, Server } = require('ssh2');
 
@@ -19,7 +20,8 @@ function checkValue(input, allowed) {
 }
 
 new Server({
-  hostKeys: [readFileSync('etc/ssh/ssh_host_ed25519_key')]
+  hostKeys: [readFileSync('etc/ssh/ssh_host_ed25519_key')],
+  port: 1337
 }, (client) => {
   console.log('Client connected!');
 
@@ -49,21 +51,43 @@ new Server({
       ctx.reject();
   }).on('ready', () => {
     console.log('Client authenticated!');
-
-    client.on('session', (accept, reject) => {
-      const session = accept();
-      session.once('exec', (accept, reject, info) => {
-        console.log('Client wants to execute: ' + inspect(info.command));
-        const stream = accept();
-        stream.stderr.write('Oh no, the dreaded errors!\n');
-        stream.write('Just kidding about the errors!\n');
-        stream.exit(0);
-        stream.end();
+    client
+      .on('session', (accept, reject) => {
+        let session = accept();
+        session.on('shell', function(accept, reject) {
+          let stream = accept();
+        });
+      })
+      .on('request', (accept, reject, name, info) => {
+        if (name === 'tcpip-forward') {
+          
+          let server = net.createServer((socket) => {
+            socket.setEncoding('utf8');
+            client.forwardOut(
+              info.bindAddr, info.bindPort,
+              socket.remoteAddress, socket.remotePort,
+              (err, upstream) => {
+                if (err) {
+                  socket.end();
+                  return console.error('not working: ' + err);
+                }
+                upstream.pipe(socket).pipe(upstream);
+              });
+          });
+          server.on('error', (err) => {
+            console.log(err.toString());
+            reject();
+          });
+          server.listen(info.bindPort, () => {
+            accept();
+          });
+        } else {
+          reject();
+        }
       });
-    });
   }).on('close', () => {
     console.log('Client disconnected');
   });
-}).listen(0, '127.0.0.1', function() {
+}).listen(1337, '127.0.0.1', function() {
   console.log('Listening on port ' + this.address().port);
 });
