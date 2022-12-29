@@ -1,4 +1,3 @@
-const { timingSafeEqual } = require('crypto');
 const { readFileSync } = require('fs');
 const { inspect } = require('util');
 const net = require('net');
@@ -7,45 +6,32 @@ const base58check = require('base58check');
 
 const { utils: { parseKey }, Server } = require('ssh2');
 
-const allowedUser = Buffer.from('foo');
-const allowedPubKey = parseKey(readFileSync('etc/foo/foo.pub'));
-
-function checkValue(input, allowed) {
-  const autoReject = (input.length !== allowed.length);
-  if (autoReject) {
-    // Prevent leaking length information by always making a comparison with the
-    // same input when lengths don't match what we expect ...
-    allowed = input;
-  }
-  const isMatch = timingSafeEqual(input, allowed);
-  return (!autoReject && isMatch);
-}
-
-let clients = {};
+let accounts = {};
 
 new Server({
   hostKeys: [readFileSync('etc/ssh/ssh_host_ed25519_key')],
   port: 1337
-}, (client) => {
+}, (connection) => {
   console.log('Client connected!');
 
-  client.on('authentication', (ctx) => {
+  connection.on('authentication', (ctx) => {
     let allowed = true;
-    if (!checkValue(Buffer.from(ctx.username), allowedUser))
+    if (!accounts[ctx.username]) {
       allowed = false;
+    }
 
     switch (ctx.method) {
-      case 'password':
-        return ctx.reject();
-        break;
       case 'publickey':
-        if (ctx.key.algo !== allowedPubKey.type
-            || !checkValue(ctx.key.data, allowedPubKey.getPublicSSH())
-            || (ctx.signature && allowedPubKey.verify(ctx.blob, ctx.signature) !== true)) {
+        if (!ctx.key || ctx.key.data.length < 32) {
           return ctx.reject();
         }
         let addr = base58check.encode(keccak256(ctx.key.data).slice(12, 32));
-        clients[addr] = client;
+        let allowedPubKey = parseKey(accounts[addr]);
+        if (ctx.key.algo !== allowedPubKey.type
+            || ctx.key.data.compare(allowedPubKey.getPublicSSH()) !== 0
+            || (ctx.signature && allowedPubKey.verify(ctx.blob, ctx.signature) !== true)) {
+          return ctx.reject();
+        }
         break;
       default:
         return ctx.reject();
@@ -58,7 +44,7 @@ new Server({
   }).on('ready', () => {
 
     console.log('Client authenticated!');
-    client
+    connection
       .on('session', (accept, reject) => {
         let session = accept();
         session.on('shell', function(accept, reject) {
@@ -75,7 +61,7 @@ new Server({
               server.sockets = [];
             }
             server.sockets.push(socket);
-            client.forwardOut(
+            connection.forwardOut(
               info.bindAddr, info.bindPort,
               socket.remoteAddress, socket.remotePort,
               (err, upstream) => {
@@ -93,19 +79,19 @@ new Server({
           server.listen(info.bindPort, () => {
             accept();
           });
-          client.server = server;
+          connection.server = server;
         } else {
           reject();
         }
       });
   }).on('close', () => {
-    if (client.server) {
-      for (var i in client.server.sockets) {
-          client.server.sockets[i].destroy();
+    if (connection.server) {
+      for (var i in connection.server.sockets) {
+          connection.server.sockets[i].destroy();
       }
-      client.server.close(function () {
+      connection.server.close(function () {
           console.log('server closed.');
-          client.server.unref();
+          connection.server.unref();
       });
     };
     console.log('Client disconnected');
