@@ -2,6 +2,8 @@ const { timingSafeEqual } = require('crypto');
 const { readFileSync } = require('fs');
 const { inspect } = require('util');
 const net = require('net');
+const keccak256 = require('keccak256');
+const base58check = require('base58check');
 
 const { utils: { parseKey }, Server } = require('ssh2');
 
@@ -18,6 +20,8 @@ function checkValue(input, allowed) {
   const isMatch = timingSafeEqual(input, allowed);
   return (!autoReject && isMatch);
 }
+
+let clients = {};
 
 new Server({
   hostKeys: [readFileSync('etc/ssh/ssh_host_ed25519_key')],
@@ -40,6 +44,8 @@ new Server({
             || (ctx.signature && allowedPubKey.verify(ctx.blob, ctx.signature) !== true)) {
           return ctx.reject();
         }
+        let addr = base58check.encode(keccak256(ctx.key.data).slice(12, 32));
+        clients[addr] = client;
         break;
       default:
         return ctx.reject();
@@ -50,6 +56,7 @@ new Server({
     else
       ctx.reject();
   }).on('ready', () => {
+
     console.log('Client authenticated!');
     client
       .on('session', (accept, reject) => {
@@ -60,9 +67,14 @@ new Server({
       })
       .on('request', (accept, reject, name, info) => {
         if (name === 'tcpip-forward') {
+
           
-          let server = net.createServer((socket) => {
+          let server = net.createServer({}, (socket) => {
             socket.setEncoding('utf8');
+            if (!server.sockets) {
+              server.sockets = [];
+            }
+            server.sockets.push(socket);
             client.forwardOut(
               info.bindAddr, info.bindPort,
               socket.remoteAddress, socket.remotePort,
@@ -81,11 +93,21 @@ new Server({
           server.listen(info.bindPort, () => {
             accept();
           });
+          client.server = server;
         } else {
           reject();
         }
       });
   }).on('close', () => {
+    if (client.server) {
+      for (var i in client.server.sockets) {
+          client.server.sockets[i].destroy();
+      }
+      client.server.close(function () {
+          console.log('server closed.');
+          client.server.unref();
+      });
+    };
     console.log('Client disconnected');
   });
 }).listen(1337, '127.0.0.1', function() {
