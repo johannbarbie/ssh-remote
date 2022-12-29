@@ -1,0 +1,10 @@
+{
+  "name": "ssh-remote",
+  "version": "0.0.1",
+  "description": "a server that accepts ssh remote forwarding requests, and assign them to port numbers from a database",
+  "main": "index.js",
+  "repository": "https://github.com/johannbarbie/ssh-remote",
+  "author": "<johannbarbie@me.com>",
+  "license": "GPL3",
+  "private": false
+}
