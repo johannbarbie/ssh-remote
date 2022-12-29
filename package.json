@@ -6,5 +6,8 @@
   "repository": "https://github.com/johannbarbie/ssh-remote",
   "author": "<johannbarbie@me.com>",
   "license": "GPL3",
-  "private": false
+  "private": false,
+  "dependencies": {
+    "ssh2": "^1.11.0"
+  }
 }
