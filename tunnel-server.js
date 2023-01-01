@@ -7,7 +7,9 @@ module.exports = {
 
     new Server({
       hostKeys,
-      port
+      port,
+      banner: "heeeeeeeeeelllllllllllooooooooooooo!",
+      greeting: "greeeeettting!!!!"
     }, (connection) => {
       console.log('Client connected!');
 
@@ -52,6 +54,19 @@ module.exports = {
           .on('session', (accept, reject) => {
             let session = accept();
             session.on('shell', function(accept, reject) {
+              let stream = accept();
+              stream.on('data', (data) => {
+                console.log(`shell data: ${data}`);
+              });
+            });
+            session.on('pty', function(accept, reject, info) {
+              console.log(`pty: ${JSON.stringify(info)}`);
+              //accept();
+              reject();
+            });
+            session.on('exec', function(accept, reject, info) {
+              console.log(`exec ${info}`);
+
               let stream = accept();
             });
           })
