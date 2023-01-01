@@ -24,7 +24,7 @@ module.exports = {
       if (db[addr]) {
         return res.status(409).send('server key already registered');
       }
-      db[addr] = `ssh-ed25519 ${req.body.pubKeyBase64}`;
+      db[addr] = {pub: `ssh-ed25519 ${req.body.pubKeyBase64}`};
       let rsp = {};
       rsp[addr] = db[addr];
       return res.send(rsp);

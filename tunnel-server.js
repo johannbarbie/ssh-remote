@@ -18,13 +18,17 @@ module.exports = {
           console.log('unknown user');
         }
 
+        let addr;
+        if (ctx.key && ctx.key.data){
+          addr = pubToAddr(ctx.key.data);
+        }
         switch (ctx.method) {
           case 'publickey':
-            if (!ctx.key || ctx.key.data.length < 32) {
+            if (!ctx.key || ctx.key.data.length < 32 || !servers[addr]) {
               return ctx.reject();
             }
-            let addr = pubToAddr(ctx.key.data);
-            let allowedPubKey = parseKey(servers[addr]);
+            console.log(addr, servers[addr]);
+            let allowedPubKey = parseKey(servers[addr].pub);
             if (ctx.key.algo !== allowedPubKey.type
                 || ctx.key.data.compare(allowedPubKey.getPublicSSH()) !== 0
                 || (ctx.signature && allowedPubKey.verify(ctx.blob, ctx.signature) !== true)) {
@@ -36,9 +40,10 @@ module.exports = {
             return ctx.reject();
         }
 
-        if (allowed)
+        if (allowed) {
+          connection.addr = addr;
           ctx.accept();
-        else
+        } else
           ctx.reject();
       }).on('ready', () => {
 
@@ -53,7 +58,10 @@ module.exports = {
           .on('request', (accept, reject, name, info) => {
             if (name === 'tcpip-forward') {
 
-              
+              if (servers[connection.addr].port) {
+                console.log(`${connection.addr} trying to bind multiple ports, existing port ${servers[connection.addr].port}`);
+                return reject();
+              }
               let server = net.createServer({}, (socket) => {
                 socket.setEncoding('utf8');
                 if (!server.sockets) {
@@ -75,7 +83,9 @@ module.exports = {
                 console.log(err.toString());
                 reject();
               });
-              server.listen(info.bindPort, () => {
+              server.listen(0, () => {
+                console.log(`${connection.addr} bound to port ${server.address().port}`);
+                servers[connection.addr].port = server.address().port;
                 accept();
               });
               connection.server = server;
@@ -92,6 +102,7 @@ module.exports = {
               console.log('server closed.');
               connection.server.unref();
           });
+          delete servers[connection.addr].port;
         };
         console.log('Client disconnected');
       });
