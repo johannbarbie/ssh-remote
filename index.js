@@ -3,10 +3,45 @@ const { inspect } = require('util');
 const net = require('net');
 const keccak256 = require('keccak256');
 const base58check = require('base58check');
-
+const express = require('express');
 const { utils: { parseKey }, Server } = require('ssh2');
 
-let accounts = {};
+let servers = {};
+
+function pubToAddr(data, algo) {
+  let addr = base58check.encode(keccak256(data).slice(12, 32));
+  return addr;
+}
+
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+app.get('/servers', (req, res) => {
+  return res.send(servers);
+});
+
+app.get('/servers/:addr', (req, res) => {
+  return res.send(servers[req.params.addr]);
+});
+
+app.post('/servers', (req, res) => {
+  const pub = Buffer.from(req.body.pubKeyBase64, 'base64');
+  const addr = pubToAddr(pub);
+  if (servers[addr]) {
+    return res.status(409).send('server key already registered');
+  }
+  servers[addr] = `ssh-ed25519 ${req.body.pubKeyBase64}`;
+  let rsp = {};
+  rsp[addr] = servers[addr];
+  return res.send(rsp);
+});
+
+const appPort = 8081;
+app.listen(appPort, () =>
+  console.log(`REST API listening on port ${appPort}!`),
+);
+
 
 new Server({
   hostKeys: [readFileSync('etc/ssh/ssh_host_ed25519_key')],
@@ -16,8 +51,9 @@ new Server({
 
   connection.on('authentication', (ctx) => {
     let allowed = true;
-    if (!accounts[ctx.username]) {
+    if (!servers[ctx.username]) {
       allowed = false;
+      console.log('unknown user');
     }
 
     switch (ctx.method) {
@@ -25,11 +61,12 @@ new Server({
         if (!ctx.key || ctx.key.data.length < 32) {
           return ctx.reject();
         }
-        let addr = base58check.encode(keccak256(ctx.key.data).slice(12, 32));
-        let allowedPubKey = parseKey(accounts[addr]);
+        let addr = pubToAddr(ctx.key.data);
+        let allowedPubKey = parseKey(servers[addr]);
         if (ctx.key.algo !== allowedPubKey.type
             || ctx.key.data.compare(allowedPubKey.getPublicSSH()) !== 0
             || (ctx.signature && allowedPubKey.verify(ctx.blob, ctx.signature) !== true)) {
+          console.log(`invalid authentication for ${addr}`);
           return ctx.reject();
         }
         break;
@@ -97,5 +134,5 @@ new Server({
     console.log('Client disconnected');
   });
 }).listen(1337, '127.0.0.1', function() {
-  console.log('Listening on port ' + this.address().port);
+  console.log('Tunnel Server listening on port ' + this.address().port);
 });
