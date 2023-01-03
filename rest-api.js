@@ -30,7 +30,7 @@ module.exports = {
       return res.send(rsp);
     });
 
-    app.listen(port, () =>
+    app.listen(port, '127.0.0.1', () =>
       console.log(`REST API listening on port ${port}!`),
     );
     return app;
