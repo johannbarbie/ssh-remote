@@ -77,22 +77,36 @@ module.exports = {
                 console.log(`${connection.addr} trying to bind multiple ports, existing port ${servers[connection.addr].port}`);
                 return reject();
               }
-              let server = net.createServer({}, (socket) => {
-                socket.setEncoding('utf8');
+              let server = net.createServer({allowHalfOpen: true}, (socket) => {
+
+                socket.on('end', () => {
+                  console.log('tunnel disconnected');
+                });
+
+                socket.on('error', function(e) {
+                  console.log(e);
+                });
+
                 if (!server.sockets) {
                   server.sockets = [];
                 }
                 server.sockets.push(socket);
+
                 connection.forwardOut(
                   info.bindAddr, info.bindPort,
                   socket.remoteAddress, socket.remotePort,
                   (err, upstream) => {
                     if (err) {
                       socket.end();
-                      return console.error('not working: ' + err);
+                      console.error('not working: ' + err);
+                      return;
                     }
                     upstream.pipe(socket).pipe(upstream);
+                    upstream.on('error', (errUp) => {
+                        console.error(`error up: ${errUp}`);
+                    });
                   });
+                
               });
               server.on('error', (err) => {
                 console.log(err.toString());
@@ -111,6 +125,7 @@ module.exports = {
       }).on('close', () => {
         if (connection.server) {
           for (var i in connection.server.sockets) {
+              console.log('destroying connections on server close...');
               connection.server.sockets[i].destroy();
           }
           connection.server.close(function () {
