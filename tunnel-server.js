@@ -29,7 +29,6 @@ module.exports = {
             if (!ctx.key || ctx.key.data.length < 32 || !servers[addr]) {
               return ctx.reject();
             }
-            console.log(addr, servers[addr]);
             let allowedPubKey = parseKey(servers[addr].pub);
             if (ctx.key.algo !== allowedPubKey.type
                 || ctx.key.data.compare(allowedPubKey.getPublicSSH()) !== 0
@@ -135,6 +134,11 @@ module.exports = {
           delete servers[connection.addr].port;
         };
         console.log('Client disconnected');
+      }).on('error', (err) => {
+        if (connection.addr) {
+          console.log(`client ${connection.addr} with error: ${err}`);
+        }
+        console.log(`client error: ${err}`);
       });
     }).listen(port, ip, function() {
       console.log(`Tunnel Server listening on ${ip}:${port}`);
